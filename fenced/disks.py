@@ -157,7 +157,10 @@ class Disk(object):
         elif reservation and reservation['reservation'] >> 32 == self.fence.hostid:
             # reservation is owned by us so simply update
             # the existing reservation with the new key
-            self.scsi.register_ignore_key(newkey)
+            self.scsi.update_key(
+                reservation['reservation'],
+                newkey,
+            )
         else:
             # check to see if there are even keys on disk
             keys = self.scsi.read_keys()['keys']
