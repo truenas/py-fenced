@@ -36,7 +36,11 @@ class Disks(dict):
                 newset = set(list(newset)[:SET_DISKS_CAP])
                 self._set_disks.update(newset)
             else:
-                newset.update(set(list(self.values())[:SET_DISKS_CAP - len(newset)]))
+                newset.update(set(
+                    list(
+                        self.values()
+                    )[:SET_DISKS_CAP - len(newset)]
+                ))
                 self._set_disks = newset
             return newset
         else:
@@ -60,7 +64,12 @@ class Disks(dict):
             executor.shutdown(wait=False)
         failed = {fs[i] for i in done_notdone.not_done}
         if failed:
-            logger.info('%s:%r timed out for %d disk(s)', method, args, len(failed))
+            logger.info(
+                '%s:%r timed out for %d disk(s)',
+                method,
+                args,
+                len(failed)
+            )
         for i in done_notdone.done:
             if done_callback:
                 done_callback(i, fs, failed)
@@ -69,7 +78,13 @@ class Disks(dict):
                     i.result()
                 except Exception as e:
                     disk = fs[i]
-                    logger.debug('Failed to run %r %s:%r: %s', disk, method, args, e)
+                    logger.debug(
+                        'Failed to run %r %s:%r: %s',
+                        disk,
+                        method,
+                        args,
+                        e
+                    )
                     failed.add(disk)
         return failed
 
@@ -92,7 +107,11 @@ class Disks(dict):
         return keys, remote_keys, failed
 
     def register_keys(self, newkey):
-        return self._run_batch('register_key', [newkey], disks=self._get_set_disks())
+        return self._run_batch(
+            'register_key',
+            [newkey],
+            disks=self._get_set_disks()
+        )
 
     def reset_keys(self, newkey):
         return self._run_batch('reset_keys', [newkey])
@@ -146,21 +165,22 @@ class Disk(object):
         reservation = self.get_reservation()
         newkey = self.fence.hostid << 32 | (newkey & 0xffffffff)
 
-        if reservation and reservation['reservation'] >> 32 != self.fence.hostid:
-            # reservation isn't ours so register new key
-            # and preempt the other reservation
-            self.scsi.register_ignore_key(newkey)
-            self.scsi.preempt_key(
-                reservation['reservation'],
-                newkey,
-            )
-        elif reservation and reservation['reservation'] >> 32 == self.fence.hostid:
-            # reservation is owned by us so simply update
-            # the existing reservation with the new key
-            self.scsi.update_key(
-                reservation['reservation'],
-                newkey,
-            )
+        if reservation:
+            if reservation['reservation'] >> 32 != self.fence.hostid:
+                # reservation isn't ours so register new key
+                # and preempt the other reservation
+                self.scsi.register_ignore_key(newkey)
+                self.scsi.preempt_key(
+                    reservation['reservation'],
+                    newkey,
+                )
+            elif reservation['reservation'] >> 32 == self.fence.hostid:
+                # reservation is owned by us so simply update
+                # the existing reservation with the new key
+                self.scsi.update_key(
+                    reservation['reservation'],
+                    newkey,
+                )
         else:
             # check to see if there are even keys on disk
             keys = self.scsi.read_keys()['keys']
