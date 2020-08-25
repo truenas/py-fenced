@@ -6,7 +6,6 @@ import logging
 import os
 import signal
 import struct
-import subprocess
 import sys
 import time
 
@@ -50,13 +49,20 @@ def panic(reason):
             f.write(b)
             f.flush()
             os.fsync(f.fileno())  # Be extra sure
-    except EnvironmentError as e:
-        logger.debug('Failed to write alert file: %s', e)
+    except Exception as e:
+        logger.debug('Failed to write alert file: %r', e)
 
     logger.error('FATAL: %s', reason)
     logger.error('FATAL: issuing an immediate panic.')
-    subprocess.run(['echo', 'b', '/proc/sysrq-trigger'], check=False)
-    subprocess.run(['shutdown', '-r', 'now'], check=False)
+
+    # enable the "magic" sysrq-triggers
+    # https://www.kernel.org/doc/html/latest/admin-guide/sysrq.html
+    with open('/proc/sys/kernel/sysrq') as f:
+        f.write('1')
+
+    # now violently reboot
+    with open('/proc/sysrq-trigger') as f:
+        f.write('b')
 
 
 def main():

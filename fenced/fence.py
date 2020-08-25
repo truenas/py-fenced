@@ -9,9 +9,8 @@ from fenced.disks import Disk, Disks
 from fenced.exceptions import PanicExit
 
 logger = logging.getLogger(__name__)
-LICENSE_FILE = '/data/license'
-ID_FILE = '/etc/machine-id'
 
+ID_FILE = '/etc/machine-id'
 SCSI_GENERIC = '/sys/class/scsi_generic/'
 SCSI_GENERIC_GLOB = SCSI_GENERIC + 'sg*'
 
@@ -80,7 +79,10 @@ class Fence(object):
             self._disks.add(disk)
 
         if unsupported:
-            logger.debug('Disks without support for SCSI-3 PR: %s.', ' '.join(unsupported))
+            logger.debug(
+                'Disks without support for SCSI-3 PR: %s.',
+                ' '.join(unsupported)
+            )
 
         return remote_keys
 
@@ -98,7 +100,10 @@ class Fence(object):
 
         if not force:
             wait_interval = 2 * self._interval + 1
-            logger.info('Waiting %d seconds to verify remote keys.', wait_interval)
+            logger.info(
+                'Waiting %d seconds to verify remote keys.',
+                wait_interval
+            )
             time.sleep(wait_interval)
             new_remote_keys = self._disks.get_keys()[1]
             if not new_remote_keys.issubset(remote_keys):
@@ -112,7 +117,10 @@ class Fence(object):
         if failed_disks:
             rate = int((len(failed_disks) / len(self._disks)) * 100)
             if rate > 10:
-                logger.error('%d%% of the disks failed to reset SCSI reservations, exiting.', rate)
+                logger.error(
+                    '%d%% of the disks failed to reset SCSI-3 PRs, exiting.',
+                    rate
+                )
                 sys.exit(ExitCode.RESERVE_ERROR.value)
             for disk in failed_disks:
                 self._disks.remove(disk)
@@ -144,9 +152,15 @@ class Fence(object):
                         if reservation:
                             reshostid = reservation['reservation'] >> 32
                             if self.hostid != reshostid:
-                                raise PanicExit(f'Reservation for at least one disk ({disk.name}) was preempted.')
+                                raise PanicExit(
+                                    'Reservation for disk (%s) was preempted.',
+                                    disk.name
+                                )
 
-                        logger.info('Trying to reset reservation for %s', disk.name)
+                        logger.info(
+                            'Trying to reset reservation for %s',
+                            disk.name
+                        )
                         disk.reset_keys(key)
                         failed_disks.remove(disk)
                     except PanicExit:
@@ -155,7 +169,7 @@ class Fence(object):
                         pass
                 if failed_disks:
                     logger.info(
-                        'Disks failed to set reservation and being removed: %s',
+                        'Failed to set reservations on: %s so removing',
                         ', '.join(d.name for d in failed_disks),
                     )
                 for d in failed_disks:
