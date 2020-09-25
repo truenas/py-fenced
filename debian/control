@@ -10,5 +10,5 @@ Standards-Version: 4.3.0
 Package: python3-fenced
 Architecture: all
 Depends: ${misc:Depends}, ${python3:Depends}
-Description: Python bindings for SCSI-3 Persistent Reservations
- utilizing the sg3_utils API. <http://sg.danny.cz/sg/sg3_utils.html>
+Description: Python daemon for automatically managing
+ SCSI-3 Persistent Reservations. Depends on <https://github.com/truenas/py-sgpersist>.
