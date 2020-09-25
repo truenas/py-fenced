@@ -6,7 +6,7 @@ import os
 from glob import iglob
 
 from fenced.disks import Disk, Disks
-from fenced.exceptions import PanicExit
+from fenced.exceptions import PanicExit, ExcludeDisksError
 
 logger = logging.getLogger(__name__)
 
@@ -19,14 +19,16 @@ class ExitCode(enum.IntEnum):
     REGISTER_ERROR = 1
     REMOTE_RUNNING = 2
     RESERVE_ERROR = 3
+    EXCLUDE_DISKS_ERROR = 4
     UNKNOWN = 5
     ALREADY_RUNNING = 6
 
 
 class Fence(object):
 
-    def __init__(self, interval):
+    def __init__(self, interval, exclude_disks):
         self._interval = interval
+        self._exclude_disks = exclude_disks
         self._disks = Disks(self)
         self._reload = False
         self.hostid = None
@@ -47,12 +49,12 @@ class Fence(object):
         unsupported = []
         remote_keys = set()
 
+        disks = []
         if os.path.exists(SCSI_GENERIC):
             # We want to use the scsi generic devices (/dev/sg*)
             # since the sg driver in linux is specifically
             # designed for sending SCSI commands to the
             # end-point device
-            disks = []
             for i in iglob(SCSI_GENERIC_GLOB):
                 with open(i + '/device/uevent', 'r') as f:
                     a = f.read().strip()
@@ -68,7 +70,19 @@ class Fence(object):
                             else:
                                 disks.append(i.split('/')[-1])
 
+        # Running fenced excluding all disks is not allowed
+        if not len(set(disks) - set(self._exclude_disks)):
+            raise ExcludeDisksError('Excluding all disks is not allowed')
+
         for i in disks:
+
+            # You can pass an "-ed" argument to fenced
+            # to exclude disks from getting SCSI reservations.
+            # fenced is called with this option by default
+            # to exclude the OS boot drive(s).
+            if i in self._exclude_disks:
+                continue
+
             try:
                 disk = Disk(self, i)
                 remote_keys.update(disk.get_keys()[1])
