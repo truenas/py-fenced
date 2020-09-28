@@ -57,11 +57,11 @@ def panic(reason):
 
     # enable the "magic" sysrq-triggers
     # https://www.kernel.org/doc/html/latest/admin-guide/sysrq.html
-    with open('/proc/sys/kernel/sysrq') as f:
+    with open('/proc/sys/kernel/sysrq', 'w') as f:
         f.write('1')
 
     # now violently reboot
-    with open('/proc/sysrq-trigger') as f:
+    with open('/proc/sysrq-trigger', 'w') as f:
         f.write('b')
 
 
