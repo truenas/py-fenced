@@ -10,7 +10,7 @@ from fenced.exceptions import PanicExit, ExcludeDisksError
 
 logger = logging.getLogger(__name__)
 
-ID_FILE = '/etc/machine-id'
+ID_FILE = '/etc/hostid'
 SCSI_GENERIC = '/sys/class/scsi_generic/'
 SCSI_GENERIC_GLOB = SCSI_GENERIC + 'sg*'
 
@@ -35,12 +35,12 @@ class Fence(object):
 
     def get_hostid(self):
 
-        with open(ID_FILE, 'r') as f:
-            machine_id = int(f.read().strip(), 16)
-            hostid = machine_id | 1 << 31
-            hostid &= 0xffffffff
-
-        return hostid
+        try:
+            with open(ID_FILE, 'r') as f:
+                return int(f.read(4).hex(), 16)
+        except Exception as e:
+            logger.error('failed to generate unique id with error: %s', e)
+            sys.exit(ExitCode.UNKNOWN.value)
 
     def load_disks(self):
 
