@@ -36,7 +36,7 @@ class Fence(object):
     def get_hostid(self):
 
         try:
-            with open(ID_FILE, 'r') as f:
+            with open(ID_FILE, 'rb') as f:
                 return int(f.read(4).hex(), 16)
         except Exception as e:
             logger.error('failed to generate unique id with error: %s', e)
