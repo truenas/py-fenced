@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, wait as fut_wait
 
-import libsgpersist
+import libsgio
 import logging
 
 SET_DISKS_CAP = 30
@@ -124,7 +124,7 @@ class Disk(object):
         self.name = name
         self.pool = pool
         self.curkey = None
-        self.scsi = libsgpersist.SCSIDevice(f'/dev/{name}')
+        self.scsi = libsgio.SCSIDevice(f'/dev/{name}')
         self.nvme = None
 
     def __repr__(self):
