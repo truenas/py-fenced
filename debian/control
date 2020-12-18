@@ -2,7 +2,7 @@ Source: fenced
 Maintainer: Caleb <yocalebo@gmail.com>
 Section: python
 Priority: optional
-Pre-Depends: python3-sgpersist, ${misc:Pre-Depends}
+Pre-Depends: python3-sgio, ${misc:Pre-Depends}
 Build-Depends: debhelper (>= 12),
  dh-python,
  python3-setuptools,
