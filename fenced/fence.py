@@ -58,8 +58,10 @@ class Fence(object):
             for i in iglob(SCSI_GENERIC_GLOB):
                 with open(i + '/device/uevent', 'r') as f:
                     a = f.read().strip()
-                    # We do not want scsi enclosure devices
-                    if 'ses' in a:
+                    # 'ses' = scsi enclosure devices
+                    # 'sr' = CD/DVD devices
+                    # We don't want those
+                    if 'ses' in a or 'sr' in a:
                         continue
                     else:
                         with open(i + '/device/vendor', 'r') as z:
