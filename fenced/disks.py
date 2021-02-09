@@ -165,7 +165,7 @@ class Disk(object):
         reservation = self.get_reservation()
         newkey = self.fence.hostid << 32 | (newkey & 0xffffffff)
 
-        if reservation:
+        if reservation['reservation'] is not None:
             if reservation['reservation'] >> 32 != self.fence.hostid:
                 # reservation isn't ours so register new key
                 # and preempt the other reservation
