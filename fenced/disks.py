@@ -119,10 +119,10 @@ class Disks(dict):
 
 class Disk(object):
 
-    def __init__(self, fence, name, pool=None):
+    def __init__(self, fence, name, log_info=None):
         self.fence = fence
         self.name = name
-        self.pool = pool
+        self.log_info = log_info
         self.curkey = None
         self.scsi = libsgio.SCSIDevice(f'/dev/{name}')
         self.nvme = None

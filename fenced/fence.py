@@ -49,34 +49,47 @@ class Fence(object):
         unsupported = []
         remote_keys = set()
 
-        disks = []
         try:
             with Client() as c:
                 if not self._use_zpools:
                     # grab all detected disks on the system
-                    disks.extend([k for k in c.call('device.get_info', 'DISK')])
+                    disks = c.call('device.get_info', 'DISK')
                 else:
                     # detect zpool(s) and add the disks in use by said zpool(s)
+                    disks = {}
                     for i in c.call('pool.query'):
                         for j in c.call('pool.flatten_topology', i['topology']):
                             if j['type'] == 'DISK' and j['disk'] is not None:
-                                disks.append(j['disk'])
+                                disks[j['disk']] = {
+                                    'zpool': i['name'],
+                                    'guid': i['guid'],
+                                }
         except Exception:
             logger.error('failed to generate disk info', exc_info=True)
-            sys.exist(ExitCode.UNKNOWN.value)
+            sys.exit(ExitCode.UNKNOWN.value)
 
-        if disks and not len(set(disks) - set(self._exclude_disks)):
+        if disks and not set(disks) - set(self._exclude_disks):
             # excluding all disks is not allowed
             raise ExcludeDisksError('Excluding all disks is not allowed')
 
-        for i in disks:
+        for k, v in disks.items():
 
             # You can pass an "-ed" argument to fenced
             # to exclude disks from getting SCSI reservations.
             # fenced is called with this option by default
             # to exclude the OS boot drive(s).
-            if i in self._exclude_disks:
+            if k in self._exclude_disks:
                 continue
+
+            # used when SIGUSR1 is sent to us we will log info
+            # to be used for troubleshooting purposes
+            if self._use_zpools:
+                log_info = v
+            else:
+                log_info = {
+                    'serial': v['serial'],
+                    'type': v['type'],
+                }
 
             # try 2 times to read the keys since there are SSDs
             # that have a firmware bug that will actually barf
@@ -86,18 +99,16 @@ class Fence(object):
             # requested with no errors.
             # (i'm looking at you STEC ZeusRAM)
             tries = 2
-            for j in range(tries):
+            for i in range(tries):
                 try:
-                    disk = Disk(self, i)
+                    disk = Disk(self, k, log_info=log_info)
                     remote_keys.update(disk.get_keys()[1])
                 except Exception:
-                    logger.debug(
-                        'Retrying to read keys for disks %s', i
-                    )
-                    if j < tries - 1:
+                    logger.debug(f'Retrying to read keys for disk: {k}')
+                    if i < tries - 1:
                         continue
                     else:
-                        unsupported.append(i)
+                        unsupported.append(k)
 
             self._disks.add(disk)
 
@@ -112,6 +123,9 @@ class Fence(object):
     def signal_handler(self, signum, frame):
         if signum == signal.SIGHUP:
             self._reload = True
+        elif signum == signal.SIGUSR1:
+            logger.debug('SIGUSR1 received, logging information')
+            self.log_info()
 
     def init(self, force):
         self.hostid = self.get_hostid()
@@ -152,6 +166,12 @@ class Fence(object):
         logger.info('SCSI reservation set on %d disks.', len(self._disks))
 
         return newkey
+
+    def log_info(self):
+        info = {}
+        for v in self._disks.values():
+            info.update({v.name: v.log_info})
+        logger.debug(info)
 
     def loop(self, key):
 
