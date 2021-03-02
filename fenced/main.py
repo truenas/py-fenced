@@ -94,15 +94,20 @@ def main():
         help='List of disks to be excluded from SCSI reservations.'
              ' (THIS CAN CAUSE PROBLEMS IF YOU DONT KNOW WHAT YOURE DOING)',
     )
+    parser.add_argument(
+        '--use-zpools', '-uz',
+        action='store_true',
+        help='Reserve the disks in use by the zpools detected on this system',
+    )
     args = parser.parse_args()
 
     setup_logging(args.foreground)
 
     if is_running():
-        logger.error('fence already running.')
+        logger.error('fenced already running.')
         sys.exit(ExitCode.ALREADY_RUNNING.value)
 
-    fence = Fence(args.interval, args.exclude_disks)
+    fence = Fence(args.interval, args.exclude_disks, args.use_zpools)
     newkey = fence.init(args.force)
 
     if not args.foreground:
@@ -125,13 +130,13 @@ def main():
             logger.info('Fatal error: %s', e)
             sys.exit(ExitCode.UNKNOWN.value)
         else:
-            logger.info('Panic %s', e)
+            logger.error('PANIC: %s', e)
             panic(e)
     except ExcludeDisksError as e:
         logger.error('FATAL: %s', e)
         sys.exit(ExitCode.EXCLUDE_DISKS_ERROR.value)
     except Exception:
-        logger.error('Unexpected exception', exc_info=True)
+        logger.error('Unhandled exception', exc_info=True)
         sys.exit(ExitCode.UNKNOWN.value)
 
 

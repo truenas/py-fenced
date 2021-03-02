@@ -16,6 +16,8 @@ def ensure_logdir_exists():
 
 
 def setup_logging(foreground):
+    # ignore annoying ws4py close debug messages
+    logging.getLogger('ws4py').setLevel(logging.WARN)
 
     ensure_logdir_exists()
 
