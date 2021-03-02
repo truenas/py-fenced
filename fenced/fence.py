@@ -2,17 +2,15 @@ import enum
 import logging
 import sys
 import time
-import os
-from glob import iglob
 
 from fenced.disks import Disk, Disks
 from fenced.exceptions import PanicExit, ExcludeDisksError
+from middlewared.client import Client
+
 
 logger = logging.getLogger(__name__)
 
 ID_FILE = '/etc/hostid'
-SCSI_GENERIC = '/sys/class/scsi_generic/'
-SCSI_GENERIC_GLOB = SCSI_GENERIC + 'sg*'
 
 
 class ExitCode(enum.IntEnum):
@@ -26,9 +24,10 @@ class ExitCode(enum.IntEnum):
 
 class Fence(object):
 
-    def __init__(self, interval, exclude_disks):
+    def __init__(self, interval, exclude_disks, use_zpools):
         self._interval = interval
         self._exclude_disks = exclude_disks
+        self._use_zpools = use_zpools
         self._disks = Disks(self)
         self._reload = False
         self.hostid = None
@@ -50,30 +49,23 @@ class Fence(object):
         remote_keys = set()
 
         disks = []
-        if os.path.exists(SCSI_GENERIC):
-            # We want to use the scsi generic devices (/dev/sg*)
-            # since the sg driver in linux is specifically
-            # designed for sending SCSI commands to the
-            # end-point device
-            for i in iglob(SCSI_GENERIC_GLOB):
-                with open(i + '/device/uevent', 'r') as f:
-                    a = f.read().strip()
-                    # 'ses' = scsi enclosure devices
-                    # 'sr' = CD/DVD devices
-                    # We don't want those
-                    if 'ses' in a or 'sr' in a:
-                        continue
-                    else:
-                        with open(i + '/device/vendor', 'r') as z:
-                            b = z.read().strip()
-                            # We do not want ATA devices
-                            if 'ATA' in b:
-                                continue
-                            else:
-                                disks.append(i.split('/')[-1])
+        try:
+            with Client() as c:
+                if not self._use_zpools:
+                    # grab all detected disks on the system
+                    disks.extend([k for k in c.call('device.get_info', 'DISK')])
+                else:
+                    # detect zpool(s) and add the disks in use by said zpool(s)
+                    for i in c.call('pool.query'):
+                        for j in c.call('pool.flatten_topology', i['topology']):
+                            if j['type'] == 'DISK' and j['disk'] is not None:
+                                disks.append(j['disk'])
+        except Exception as e:
+            logger.error('failed to generate disk info', exc_info=True)
+            sys.exist(ExitCode.UNKNOWN.value)
 
-        # Running fenced excluding all disks is not allowed
-        if not len(set(disks) - set(self._exclude_disks)):
+        if disks and not len(set(disks) - set(self._exclude_disks)):
+            # excluding all disks is not allowed
             raise ExcludeDisksError('Excluding all disks is not allowed')
 
         for i in disks:
