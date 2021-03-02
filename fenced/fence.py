@@ -2,6 +2,7 @@ import enum
 import logging
 import sys
 import time
+import signal
 
 from fenced.disks import Disk, Disks
 from fenced.exceptions import PanicExit, ExcludeDisksError
@@ -60,7 +61,7 @@ class Fence(object):
                         for j in c.call('pool.flatten_topology', i['topology']):
                             if j['type'] == 'DISK' and j['disk'] is not None:
                                 disks.append(j['disk'])
-        except Exception as e:
+        except Exception:
             logger.error('failed to generate disk info', exc_info=True)
             sys.exist(ExitCode.UNKNOWN.value)
 
@@ -108,8 +109,9 @@ class Fence(object):
 
         return remote_keys
 
-    def sighup_handler(self, signum, intr_stack_frame):
-        self._reload = True
+    def signal_handler(self, signum, frame):
+        if signum == signal.SIGHUP:
+            self._reload = True
 
     def init(self, force):
         self.hostid = self.get_hostid()

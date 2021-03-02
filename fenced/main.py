@@ -121,7 +121,7 @@ def main():
     else:
         logger.info('Running in foreground mode.')
 
-    signal.signal(signal.SIGHUP, fence.sighup_handler)
+    signal.signal(signal.SIGHUP, fence.signal_handler)
 
     try:
         fence.loop(newkey)
