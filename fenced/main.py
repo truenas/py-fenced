@@ -1,37 +1,51 @@
 #!/usr/bin/env python3
 
 import argparse
-import fcntl
 import logging
 import os
 import signal
 import struct
 import sys
 import time
+import contextlib
 
 from fenced.exceptions import PanicExit, ExcludeDisksError
 from fenced.fence import Fence, ExitCode
 from fenced.logging import setup_logging
+from middlewared.client import Client
 
 logger = logging.getLogger(__name__)
 ALERT_FILE = '/data/sentinels/.fence-alert'
-LOCK_FILE = '/tmp/.fenced-lock'
+PID_FILE = '/tmp/.fenced-pid'
 
 
 def is_running():
     """
-    Use lock file to prevent duplicate fenced's from starting
-    because fenced can and will panic the box when this happens.
+    Check if there is a currently running fenced process.
+    Multiple fenced processes running on the same system will
+    clobber one another and will, ultimately, cause a panic.
     Ticket #48031
+    Note: we need to make sure that if there is a running
+    fenced process, it's not ourself :)
     """
+    running = False
+    with contextlib.suppress(Exception):
+        with Client() as c:
+            data = c.call('failover.fenced.run_info')
+            if data['running'] and data['pid']:
+                if data['pid'] != os.getpid():
+                    running = True
 
-    lock_fd = os.open(LOCK_FILE, os.O_RDWR | os.O_CREAT)
-    try:
-        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return True
-    os.write(lock_fd, str(os.getpid()).encode())
-    return False
+    return running
+
+
+def update_pid_file():
+    """
+    We call this method after we have fork()'ed
+    """
+    with contextlib.suppress(Exception):
+        with open(PID_FILE, 'w+') as f:
+            f.write(str(os.getpid()))
 
 
 def panic(reason):
@@ -120,6 +134,8 @@ def main():
         os.closerange(0, 3)
     else:
         logger.info('Running in foreground mode.')
+
+    update_pid_file()
 
     signal.signal(signal.SIGHUP, fence.signal_handler)
     signal.signal(signal.SIGUSR1, fence.signal_handler)
