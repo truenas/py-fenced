@@ -14,7 +14,7 @@ from fenced.fence import Fence, ExitCode
 from fenced.logging import setup_logging
 
 logger = logging.getLogger(__name__)
-ALERT_FILE = '/data/sentinels/.fence-alert'
+ALERT_FILE = '/data/sentinels/.fenced-alert'
 LOCK_FILE = '/tmp/.fenced-lock'
 
 
