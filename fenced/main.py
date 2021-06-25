@@ -15,8 +15,9 @@ from fenced.logging import setup_logging
 from middlewared.client import Client
 
 logger = logging.getLogger(__name__)
-ALERT_FILE = '/data/sentinels/.fence-alert'
-PID_FILE = '/tmp/.fenced-pid'
+
+ALERT_FILE = '/data/sentinels/.fenced-alert'
+LOCK_FILE = '/tmp/.fenced-lock'
 
 
 def is_running():
