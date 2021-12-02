@@ -13,6 +13,7 @@ from fenced.exceptions import PanicExit, ExcludeDisksError
 from fenced.fence import Fence, ExitCode
 from fenced.logging import setup_logging
 from middlewared.client import Client
+from middlewared.plugins.failover_.fenced import PID_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +65,10 @@ def panic(reason):
             f.write(b)
             f.flush()
             os.fsync(f.fileno())  # Be extra sure
-    except Exception as e:
-        logger.debug('Failed to write alert file: %r', e)
+    except Exception:
+        logger.warning('Failed to write alert file', exc_info=True)
 
-    logger.error('FATAL: %s', reason)
-    logger.error('FATAL: issuing an immediate panic.')
+    logger.critical('FATAL: issuing an immediate panic because %s', reason)
 
     # enable the "magic" sysrq-triggers
     # https://www.kernel.org/doc/html/latest/admin-guide/sysrq.html
@@ -145,16 +145,15 @@ def main():
         fence.loop(newkey)
     except PanicExit as e:
         if args.no_panic:
-            logger.info('Fatal error: %s', e)
+            logger.warning('NO PANIC ERROR:', exc_info=True)
             sys.exit(ExitCode.UNKNOWN.value)
         else:
-            logger.error('PANIC: %s', e)
             panic(e)
-    except ExcludeDisksError as e:
-        logger.error('FATAL: %s', e)
+    except ExcludeDisksError:
+        logger.critical('FATAL:', exc_info=True)
         sys.exit(ExitCode.EXCLUDE_DISKS_ERROR.value)
     except Exception:
-        logger.error('Unhandled exception', exc_info=True)
+        logger.critical('Unhandled exception', exc_info=True)
         sys.exit(ExitCode.UNKNOWN.value)
 
 
