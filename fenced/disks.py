@@ -64,27 +64,16 @@ class Disks(dict):
             executor.shutdown(wait=False)
         failed = {fs[i] for i in done_notdone.not_done}
         if failed:
-            logger.info(
-                '%s:%r timed out for %d disk(s)',
-                method,
-                args,
-                len(failed)
-            )
+            logger.warning('method %r with args %r timed out for %d disk(s)', method, args, len(failed))
         for i in done_notdone.done:
             if done_callback:
                 done_callback(i, fs, failed)
             else:
                 try:
                     i.result()
-                except Exception as e:
+                except Exception:
                     disk = fs[i]
-                    logger.debug(
-                        'Failed to run %r %s:%r: %s',
-                        disk,
-                        method,
-                        args,
-                        e
-                    )
+                    logger.warning('method %r with args %r for disk %r failed.', method, args, disk, exc_info=True)
                     failed.add(disk)
         return failed
 

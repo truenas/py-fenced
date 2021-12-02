@@ -38,13 +38,13 @@ class Fence(object):
         try:
             with open(ID_FILE, 'rb') as f:
                 return int(f.read(4).hex(), 16)
-        except Exception as e:
-            logger.error('failed to generate unique id with error: %s', e)
+        except Exception:
+            logger.error('failed to generate unique id', exc_info=True)
             sys.exit(ExitCode.UNKNOWN.value)
 
     def load_disks(self):
 
-        logger.debug('Loading disks')
+        logger.info('Loading disks')
         self._disks.clear()
         unsupported = []
         remote_keys = set()
@@ -104,7 +104,7 @@ class Fence(object):
                     disk = Disk(self, k, log_info=log_info)
                     remote_keys.update(disk.get_keys()[1])
                 except Exception:
-                    logger.debug(f'Retrying to read keys for disk: {k}')
+                    logger.warning('Retrying to read keys for disk %r', k)
                     if i < tries - 1:
                         continue
                     else:
@@ -113,10 +113,7 @@ class Fence(object):
             self._disks.add(disk)
 
         if unsupported:
-            logger.debug(
-                'Disks without support for SCSI-3 PR: %s.',
-                ' '.join(unsupported)
-            )
+            logger.warning('Disks without support for SCSI-3 PR: %s', ','.join(unsupported))
 
         return remote_keys
 
@@ -124,7 +121,7 @@ class Fence(object):
         if signum == signal.SIGHUP:
             self._reload = True
         elif signum == signal.SIGUSR1:
-            logger.debug('SIGUSR1 received, logging information')
+            logger.info('SIGUSR1 received, logging information')
             self.log_info()
 
     def init(self, force):
@@ -137,33 +134,27 @@ class Fence(object):
             sys.exit(ExitCode.REGISTER_ERROR.value)
 
         if not force:
-            wait_interval = 2 * self._interval + 1
-            logger.info(
-                'Waiting %d seconds to verify remote keys.',
-                wait_interval
-            )
-            time.sleep(wait_interval)
+            wait = 2 * self._interval + 1
+            logger.info('Waiting %d seconds to verify the reservation keys do not change.', wait)
+            time.sleep(wait)
             new_remote_keys = self._disks.get_keys()[1]
             if not new_remote_keys.issubset(remote_keys):
-                logger.error('Remote keys have changed, exiting.')
+                logger.error('Reservation keys have changed, exiting.')
                 sys.exit(ExitCode.REMOTE_RUNNING.value)
             else:
-                logger.info('Remote keys unchanged.')
+                logger.info('Reservation keys unchanged.')
 
         newkey = int(time.time()) & 0xffffffff
         failed_disks = self._disks.reset_keys(newkey)
         if failed_disks:
             rate = int((len(failed_disks) / len(self._disks)) * 100)
             if rate > 10:
-                logger.error(
-                    '%d%% of the disks failed to reset SCSI-3 PRs, exiting.',
-                    rate
-                )
+                logger.error('Failed to reset reservations on %d%% of the disks, exiting.', rate)
                 sys.exit(ExitCode.RESERVE_ERROR.value)
             for disk in failed_disks:
                 self._disks.remove(disk)
 
-        logger.info('SCSI reservation set on %d disks.', len(self._disks))
+        logger.info('Persistent reservation set on %d disks.', len(self._disks))
 
         return newkey
 
@@ -171,14 +162,14 @@ class Fence(object):
         info = {}
         for v in self._disks.values():
             info.update({v.name: v.log_info})
-        logger.debug(info)
+        logger.info(info)
 
     def loop(self, key):
 
         while True:
 
             if self._reload:
-                logger.warning('SIGHUP received, reloading.')
+                logger.info('SIGHUP received, reloading.')
                 key = self.init(True)
                 self._reload = False
 
@@ -196,15 +187,9 @@ class Fence(object):
                         if reservation:
                             reshostid = reservation['reservation'] >> 32
                             if self.hostid != reshostid:
-                                raise PanicExit(
-                                    'Reservation for disk (%s) was preempted.',
-                                    disk.name
-                                )
+                                raise PanicExit('Reservation for disk %r was preempted.', disk.name)
 
-                        logger.info(
-                            'Trying to reset reservation for %s',
-                            disk.name
-                        )
+                        logger.warning('Trying to reset reservation for %r', disk.name)
                         disk.reset_keys(key)
                         failed_disks.remove(disk)
                     except PanicExit:
@@ -212,10 +197,7 @@ class Fence(object):
                     except Exception:
                         pass
                 if failed_disks:
-                    logger.info(
-                        'Failed to set reservations on: %s so removing',
-                        ', '.join(d.name for d in failed_disks),
-                    )
+                    logger.warning('Failed to set reservations on %s so removing', ','.join(failed_disks))
                 for d in failed_disks:
                     self._disks.remove(d)
 
