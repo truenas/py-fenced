@@ -96,11 +96,7 @@ class Disks(dict):
         return keys, remote_keys, failed
 
     def register_keys(self, newkey):
-        return self._run_batch(
-            'register_key',
-            [newkey],
-            disks=self._get_set_disks()
-        )
+        return self._run_batch('register_key', [newkey], disks=self._get_set_disks())
 
     def reset_keys(self, newkey):
         return self._run_batch('reset_keys', [newkey])
@@ -125,10 +121,7 @@ class Disk(object):
     def get_keys(self):
         host_key = None
         remote_keys = set()
-
-        keys = self.scsi.read_keys()['keys']
-
-        for key in keys:
+        for key in self.scsi.read_keys()['keys']:
             # First 4 bytes are the host id
             if key >> 32 == self.fence.hostid:
                 host_key = key
@@ -138,47 +131,31 @@ class Disk(object):
         return (host_key, remote_keys)
 
     def get_reservation(self):
-
         return self.scsi.read_reservation()
 
     def register_key(self, newkey):
-
         newkey = self.fence.hostid << 32 | (newkey & 0xffffffff)
-
         self.scsi.update_key(self.curkey, newkey)
-
         self.curkey = newkey
 
     def reset_keys(self, newkey):
-
         reservation = self.get_reservation()
         newkey = self.fence.hostid << 32 | (newkey & 0xffffffff)
-
         if reservation['reservation'] is not None:
             if reservation['reservation'] >> 32 != self.fence.hostid:
                 # reservation isn't ours so register new key
                 # and preempt the other reservation
                 self.scsi.register_ignore_key(newkey)
-                self.scsi.preempt_key(
-                    reservation['reservation'],
-                    newkey,
-                )
+                self.scsi.preempt_key(reservation['reservation'], newkey)
             elif reservation['reservation'] >> 32 == self.fence.hostid:
                 # reservation is owned by us so simply update
                 # the existing reservation with the new key
-                self.scsi.update_key(
-                    reservation['reservation'],
-                    newkey,
-                )
-        else:
+                self.scsi.update_key(reservation['reservation'], newkey)
+        elif not self.scsi.read_keys()['keys']:
             # check to see if there are even keys on disk
-            keys = self.scsi.read_keys()['keys']
-
-            if not keys:
-                self.scsi.register_new_key(newkey)
-                self.scsi.reserve_key(newkey)
-            else:
-                self.scsi.register_ignore_key(newkey)
-                self.scsi.reserve_key(newkey)
-
+            self.scsi.register_new_key(newkey)
+            self.scsi.reserve_key(newkey)
+        else:
+            self.scsi.register_ignore_key(newkey)
+            self.scsi.reserve_key(newkey)
         self.curkey = newkey
