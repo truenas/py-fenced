@@ -1,7 +1,8 @@
+import logging
 from concurrent.futures import ThreadPoolExecutor, wait as fut_wait
 
-import libsgio
-import logging
+from libsgio import SCSIDevice as SCSI
+from nvme import NvmeDevice as NVME
 
 SET_DISKS_CAP = 30
 logger = logging.getLogger(__name__)
@@ -109,8 +110,7 @@ class Disk(object):
         self.name = name
         self.log_info = log_info
         self.curkey = None
-        self.scsi = libsgio.SCSIDevice(f'/dev/{name}')
-        self.nvme = None
+        self.disk = NVME(f'/dev/{name}') if name.find('nvme') != -1 else SCSI(f'/dev/{name}')
 
     def __repr__(self):
         return f'<Disk: {self.name}>'
@@ -121,21 +121,20 @@ class Disk(object):
     def get_keys(self):
         host_key = None
         remote_keys = set()
-        for key in self.scsi.read_keys()['keys']:
+        for key in self.disk.read_keys()['keys']:
             # First 4 bytes are the host id
             if key >> 32 == self.fence.hostid:
                 host_key = key
             else:
                 remote_keys.add(key)
-
         return (host_key, remote_keys)
 
     def get_reservation(self):
-        return self.scsi.read_reservation()
+        return self.disk.read_reservation()
 
     def register_key(self, newkey):
         newkey = self.fence.hostid << 32 | (newkey & 0xffffffff)
-        self.scsi.update_key(self.curkey, newkey)
+        self.disk.update_key(self.curkey, newkey)
         self.curkey = newkey
 
     def reset_keys(self, newkey):
@@ -145,17 +144,17 @@ class Disk(object):
             if reservation['reservation'] >> 32 != self.fence.hostid:
                 # reservation isn't ours so register new key
                 # and preempt the other reservation
-                self.scsi.register_ignore_key(newkey)
-                self.scsi.preempt_key(reservation['reservation'], newkey)
+                self.disk.register_ignore_key(newkey)
+                self.disk.preempt_key(reservation['reservation'], newkey)
             elif reservation['reservation'] >> 32 == self.fence.hostid:
                 # reservation is owned by us so simply update
                 # the existing reservation with the new key
-                self.scsi.update_key(reservation['reservation'], newkey)
-        elif not self.scsi.read_keys()['keys']:
+                self.disk.update_key(reservation['reservation'], newkey)
+        elif not self.disk.read_keys()['keys']:
             # check to see if there are even keys on disk
-            self.scsi.register_new_key(newkey)
-            self.scsi.reserve_key(newkey)
+            self.disk.register_new_key(newkey)
+            self.disk.reserve_key(newkey)
         else:
-            self.scsi.register_ignore_key(newkey)
-            self.scsi.reserve_key(newkey)
+            self.disk.register_ignore_key(newkey)
+            self.disk.reserve_key(newkey)
         self.curkey = newkey
