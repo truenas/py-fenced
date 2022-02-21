@@ -2,17 +2,20 @@ Source: fenced
 Maintainer: Caleb <yocalebo@gmail.com>
 Section: python
 Priority: optional
-Build-Depends: debhelper (>= 12),
- dh-python,
- python3-setuptools,
- python3-all,
- python3-sgio,
- python3-nvme
+Build-Depends:	debhelper (>= 12),
+		dh-python,
+		python3-setuptools,
+		python3-all,
+		python3-sgio,
+		python3-nvme
 Standards-Version: 4.3.0
 
 Package: python3-fenced
 Architecture: all
-Depends: ${misc:Depends}, ${python3:Depends}
+Depends:	python3-nvme,
+		python3-sgio,
+		${misc:Depends},
+		${python3:Depends}
 Description: Python daemon for automatically managing
  SCSI-3 Persistent Reservations as well as NVMe persistent
  reservations. Depends on <https://github.com/truenas/py-sgio>
