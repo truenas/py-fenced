@@ -71,7 +71,8 @@ class Fence(object):
             # to exclude disks from getting SCSI reservations.
             # fenced is called with this option by default
             # to exclude the OS boot drive(s).
-            if k in self._exclude_disks:
+            # Also ignore pmem devices since that's a NVRAM device
+            if k.startswith('pmem') or k in self._exclude_disks:
                 continue
 
             # used when SIGUSR1 is sent to us we will log info
