@@ -8,6 +8,7 @@ import struct
 import sys
 import time
 import contextlib
+import resource
 
 from fenced.exceptions import PanicExit, ExcludeDisksError
 from fenced.fence import Fence, ExitCode
@@ -80,6 +81,17 @@ def panic(reason):
         f.write('b')
 
 
+def set_resource_limits():
+    """
+    On an M60 HA system with 12x ES102 JBODs, we have 1255 disks which
+    means when fenced tries to open each disk, kernel shuts it down
+    because we're opening more than RLIMIT_NOFILE (default 1024) so we
+    need to bump this to the hard limit (4096).
+    """
+    limits = (4096, 4096)  # soft and hard limits respectively
+    resource.setrlimit(resource.RLIMIT_NOFILE, limits)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -122,6 +134,7 @@ def main():
         logger.error('fenced already running.')
         sys.exit(ExitCode.ALREADY_RUNNING.value)
 
+    set_resource_limits()
     fence = Fence(args.interval, args.exclude_disks, args.use_zpools)
     newkey = fence.init(args.force)
 
