@@ -11,7 +11,7 @@ from middlewared.client import Client
 
 logger = logging.getLogger(__name__)
 
-ID_FILE = '/etc/hostid'
+ID_FILE = '/etc/machine-id'
 
 
 class ExitCode(enum.IntEnum):
@@ -35,8 +35,8 @@ class Fence(object):
 
     def get_hostid(self):
         try:
-            with open(ID_FILE, 'rb') as f:
-                return int(f.read(4).hex(), 16)
+            with open(ID_FILE) as f:
+                return int(f.read(8), 16)
         except Exception:
             logger.error('failed to generate unique id', exc_info=True)
             sys.exit(ExitCode.UNKNOWN.value)
