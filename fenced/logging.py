@@ -3,7 +3,7 @@ import logging.config
 import logging.handlers
 import os
 
-LOG_FILE = '/root/syslog/fenced.log'
+LOG_FILE = '/var/log/fenced.log'
 
 
 def ensure_logdir_exists():
@@ -16,11 +16,7 @@ def ensure_logdir_exists():
 
 
 def setup_logging(foreground):
-    # ignore annoying ws4py close debug messages
-    logging.getLogger('ws4py').setLevel(logging.WARN)
-
     ensure_logdir_exists()
-
     logging.config.dictConfig({
         'version': 1,
         'disable_existing_loggers': False,
