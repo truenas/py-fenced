@@ -3,7 +3,7 @@ import logging.config
 import logging.handlers
 import os
 
-LOG_FILE = '/root/syslog/fenced.log'
+LOG_FILE = '/var/log/fenced.log'
 
 
 def ensure_logdir_exists():
