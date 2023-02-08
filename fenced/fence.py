@@ -157,25 +157,26 @@ class Fence(object):
 
             key = 2 if key > 0xffffffff else key + 1
             logger.debug('Setting new key: 0x%x', key)
-            failed_disks = self._disks.register_keys(key)
-            if failed_disks:
-                for disk in list(failed_disks):
-                    try:
-                        reservation = disk.get_reservation()
-                        if reservation:
-                            reshostid = reservation['reservation'] >> 32
-                            if self.hostid != reshostid:
-                                raise PanicExit('Reservation for disk %r was preempted.', disk.name)
+            for failed_disk in list(self._disks.register_keys(key)):
+                try:
+                    resv = failed_disk.get_reservation()
+                except Exception:
+                    logger.warning('Failed to get current reservation on %r', failed_disk.name, exc_info=True)
+                    self._disks.remove(failed_disk)
+                    continue
+                else:
+                    if resv and self.hostid != resv['reservation'] >> 32:
+                        err = f'Reservation on {failed_disk.name!r} preempted!'
+                        logger.warning(err)
+                        raise PanicExit(err)
 
-                        logger.warning('Trying to reset reservation for %r', disk.name)
-                        disk.reset_keys(key)
-                        failed_disks.remove(disk)
-                    except PanicExit:
-                        raise
-                    except Exception:
-                        pass
-                if failed_disks:
-                    logger.warning('Failed to set reservations on %s so removing', ','.join(failed_disks))
-                for d in failed_disks:
-                    self._disks.remove(d)
+                # getting here means we need to try and reset the reservations on the disk
+                logger.warning('Trying to reset reservation for %r', failed_disk.name)
+                try:
+                    failed_disk.reset_keys(key)
+                except Exception:
+                    logger.warning('Failed to reset reservation on %r', failed_disk.name, exc_info=True)
+                    self._disks.remove(failed_disk)
+                    pass
+
             time.sleep(self._interval)
