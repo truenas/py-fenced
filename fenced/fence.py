@@ -165,7 +165,7 @@ class Fence(object):
                     self._disks.remove(failed_disk)
                     continue
                 else:
-                    if resv and self.hostid != resv['reservation'] >> 32:
+                    if all((resv, resv['reservation'])) and self.hostid != (resv['reservation'] >> 32):
                         err = f'Reservation on {failed_disk.name!r} preempted!'
                         logger.warning(err)
                         raise PanicExit(err)
