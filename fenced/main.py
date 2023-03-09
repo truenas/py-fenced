@@ -4,7 +4,6 @@ import argparse
 import logging
 import os
 import signal
-import struct
 import sys
 import time
 import contextlib
@@ -15,11 +14,9 @@ from fenced.fence import Fence, ExitCode
 from fenced.logging import setup_logging
 from middlewared.client import Client
 from middlewared.plugins.failover_.fenced import PID_FILE
+from middlewared.plugins.failover_.scheduled_reboot_alert import FENCED_ALERT_FILE
 
 logger = logging.getLogger(__name__)
-
-ALERT_FILE = '/data/sentinels/.fenced-alert'
-LOCK_FILE = '/tmp/.fenced-lock'
 
 
 def is_running():
@@ -60,10 +57,8 @@ def panic(reason):
     Ticket #39114
     """
     try:
-        with open(ALERT_FILE, 'wb') as f:
-            epoch = int(time.time())
-            b = struct.pack('@i', epoch)
-            f.write(b)
+        with open(FENCED_ALERT_FILE, 'w') as f:
+            f.write(f'{time.time()}')
             f.flush()
             os.fsync(f.fileno())  # Be extra sure
     except Exception:
