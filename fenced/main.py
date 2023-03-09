@@ -18,8 +18,6 @@ from middlewared.plugins.failover_.scheduled_reboot_alert import FENCED_ALERT_FI
 
 logger = logging.getLogger(__name__)
 
-LOCK_FILE = '/tmp/.fenced-lock'
-
 
 def is_running():
     """
