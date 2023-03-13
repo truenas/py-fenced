@@ -146,7 +146,7 @@ class Fence(object):
         return newkey
 
     def log_info(self):
-        logger.info({v.name: v.log_info} for v in self._disks.values())
+        logger.info(', '.join([f'{v.name}: {v.log_info}' for v in self._disks.values()]))
 
     def loop(self, key):
         while True:
