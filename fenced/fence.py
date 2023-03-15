@@ -6,11 +6,9 @@ import signal
 
 from fenced.disks import Disk, Disks
 from fenced.exceptions import PanicExit, ExcludeDisksError
-from middlewared.client import Client
-
+from fenced.utils import load_disks_impl
 
 logger = logging.getLogger(__name__)
-
 ID_FILE = '/etc/machine-id'
 
 
@@ -42,43 +40,22 @@ class Fence(object):
             sys.exit(ExitCode.UNKNOWN.value)
 
     def load_disks(self):
-        logger.info('Loading disks')
+        logger.info('Clearing disks (if any)')
         self._disks.clear()
+
+        logger.info('Loading disks')
+        try:
+            disks = load_disks_impl(self._exclude_disks, self._use_zpools)
+        except Exception:
+            logger.error('unhandled exception enumerating disk info', exc_info=True)
+            sys.exit(ExitCode.UNKNOWN.value)
+        else:
+            if disks and not set(disks) - set(self._exclude_disks):
+                raise ExcludeDisksError('Excluding all disks is not allowed')
+
         unsupported = []
         remote_keys = set()
-        try:
-            with Client() as c:
-                if not self._use_zpools:
-                    # grab all detected disks on the system
-                    disks = c.call('device.get_info', 'DISK')
-                else:
-                    # detect zpool(s) and add the disks in use by said zpool(s)
-                    disks = {}
-                    for i in c.call('pool.query'):
-                        for j in c.call('pool.flatten_topology', i['topology']):
-                            if j['type'] == 'DISK' and j['disk'] is not None:
-                                disks[j['disk']] = {'zpool': i['name'], 'guid': i['guid']}
-        except Exception:
-            logger.error('failed to generate disk info', exc_info=True)
-            sys.exit(ExitCode.UNKNOWN.value)
-
-        if disks and not set(disks) - set(self._exclude_disks):
-            # excluding all disks is not allowed
-            raise ExcludeDisksError('Excluding all disks is not allowed')
-
-        for k, v in disks.items():
-            # You can pass an "-ed" argument to fenced
-            # to exclude disks from getting SCSI reservations.
-            # fenced is called with this option by default
-            # to exclude the OS boot drive(s).
-            # Also ignore pmem devices since that's a NVRAM device
-            if k.startswith('pmem') or k in self._exclude_disks:
-                continue
-
-            # used when SIGUSR1 is sent to us we will log info
-            # to be used for troubleshooting purposes
-            log_info = v if self._use_zpools else {'serial': v['serial'], 'type': v['type']}
-
+        for disk_name, disk_info in disks.items():
             # try 2 times to read the keys since there are SSDs
             # that have a firmware bug that will actually barf
             # on this request. However, nothing is wrong with
@@ -89,14 +66,14 @@ class Fence(object):
             tries = 2
             for i in range(tries):
                 try:
-                    disk = Disk(self, k, log_info=log_info)
+                    disk = Disk(self, disk_name, log_info=disk_info)
                     remote_keys.update(disk.get_keys()[1])
                 except Exception:
-                    logger.warning('Retrying to read keys for disk %r', k)
+                    logger.warning('Retrying to read keys for disk %r', disk_name)
                     if i < tries - 1:
                         continue
                     else:
-                        unsupported.append(k)
+                        unsupported.append(disk_name)
             self._disks.add(disk)
 
         if unsupported:
