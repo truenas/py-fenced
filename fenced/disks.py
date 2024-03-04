@@ -148,11 +148,7 @@ class Disk(object):
                 try:
                     self.disk.preempt_key(reservation['reservation'], newkey)
                 except SCSIErrorException as e:
-                    if all((
-                        e.args,
-                        isinstance(e.args[0], SCSI_OPCODES),
-                        e.args[0] == SCSI_OPCODES.RESERVATION_CONFLICT
-                    )):
+                    if e.args and e.args[0] == SCSI_OPCODES.RESERVATION_CONFLICT:
                         # the logic by which we check if the reservation is "owned"
                         # by this host is custom logic that was written by us and is
                         # flawed. The spec for handling pr keys defines a command
