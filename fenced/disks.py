@@ -1,7 +1,7 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor, wait as fut_wait
 
-from libsgio import SCSIDevice as SCSI
+from libsgio import SCSIErrorException, SCSI_OPCODES, SCSIDevice as SCSI
 from nvme import NvmeDevice as NVME
 
 SET_DISKS_CAP = 30
@@ -145,7 +145,23 @@ class Disk(object):
                 # reservation isn't ours so register new key
                 # and preempt the other reservation
                 self.disk.register_ignore_key(newkey)
-                self.disk.preempt_key(reservation['reservation'], newkey)
+                try:
+                    self.disk.preempt_key(reservation['reservation'], newkey)
+                except SCSIErrorException as e:
+                    if all((
+                        e.args,
+                        isinstance(e.args[0], SCSI_OPCODES),
+                        e.args[0] == SCSI_OPCODES.RESERVATION_CONFLICT
+                    )):
+                        # the logic by which we check if the reservation is "owned"
+                        # by this host is custom logic that was written by us and is
+                        # flawed. The spec for handling pr keys defines a command
+                        # that can be used to determine if this host is the current
+                        # reservation holder. Since we don't have this, we check
+                        # for reservation conflict and try to "update" the key since
+                        # getting a reservation conflict when trying to preempt the
+                        # current key typically means this host is the current owner
+                        self.disk.reserve_key(newkey)
             elif reservation['reservation'] >> 32 == self.fence.hostid:
                 # reservation is owned by us so simply update
                 # the existing reservation with the new key
