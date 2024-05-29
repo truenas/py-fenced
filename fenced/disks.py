@@ -1,6 +1,8 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor, wait as fut_wait
 
+from middlewared.utils.scsi_generic import inquiry
+
 from libsgio import SCSIErrorException, SCSI_OPCODES, SCSIDevice as SCSI
 from nvme import NvmeDevice as NVME
 
@@ -110,13 +112,26 @@ class Disk(object):
         self.name = name
         self.log_info = log_info
         self.curkey = None
-        self.disk = NVME(f'/dev/{name}') if name.find('nvme') != -1 else SCSI(f'/dev/{name}')
+        self.disk = self.__parse_disk(f'/dev/{name}')
 
     def __repr__(self):
         return f'<Disk: {self.name}>'
 
     def __str__(self):
         return self.name
+
+    def __parse_disk(self, disk):
+        if disk.find('nvme') != -1:
+            # enumerated as a proper nvme device
+            return NVME(disk)
+        elif inquiry(disk)['vendor'].lower() == 'nvme':
+            # tri-mode HBA on h-series platform enumerates
+            # nvme devices as SCSI devices. Must check the
+            # T10 vendor string from the device itself to
+            # see if it's a NVMe device.
+            return NVME(disk)
+        else:
+            return SCSI(disk)
 
     def get_keys(self):
         host_key = None
