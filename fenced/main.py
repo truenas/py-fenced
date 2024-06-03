@@ -12,7 +12,7 @@ import resource
 from fenced.exceptions import PanicExit, ExcludeDisksError
 from fenced.fence import Fence, ExitCode
 from fenced.logging import setup_logging
-from middlewared.client import Client
+from truenas_api_client import Client
 from middlewared.plugins.failover_.fenced import PID_FILE
 from middlewared.plugins.failover_.scheduled_reboot_alert import FENCED_ALERT_FILE
 
