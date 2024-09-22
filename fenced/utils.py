@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 def safe_retrieval(prop, keys, default, asint=False):
     for key in keys:
         if (value := prop.get(key)) is not None:
-            if type(value) == bytes:
+            if isinstance(value, bytes):
                 value = value.strip().decode()
             else:
                 value = value.strip()
@@ -26,8 +26,8 @@ def safe_retrieval(prop, keys, default, asint=False):
 def get_disk_serial(dev):
     return safe_retrieval(
         dev.properties,
-        ('ID_SCSI_SERIAL', 'ID_SERIAL_SHORT', 'ID_SERIAL'),
-        '',
+        ("ID_SCSI_SERIAL", "ID_SERIAL_SHORT", "ID_SERIAL"),
+        "",
     )
 
 
@@ -36,11 +36,12 @@ def load_disks_middleware_no_zpools(c, ignore):
     disks = {}
     try:
         disks = {
-            k: v for k, v in c.call('device.get_disks', False, True).items()
+            k: v
+            for k, v in c.call("device.get_disks", False, True).items()
             if not k.startswith(ignore[0]) and not ignore[1].match(k)
         }
     except Exception:
-        logger.error('Unhandled exception', exc_info=True)
+        logger.error("Unhandled exception", exc_info=True)
 
     return disks
 
@@ -48,12 +49,19 @@ def load_disks_middleware_no_zpools(c, ignore):
 def load_disks_middleware_use_zpools(c, ignore):
     disks = {}
     try:
-        for i in c.call('pool.query'):
-            for j in filter(lambda x: x['type'] == 'DISK', c.call('pool.flatten_topology', i['topology'])):
-                if j['disk'] is not None and not j['disk'].startswith(ignore[0]) and not ignore[1].match(j['disk']):
-                    disks[j['disk']] = {'zpool': i['name'], 'guid': i['guid']}
+        for i in c.call("pool.query"):
+            for j in filter(
+                lambda x: x["type"] == "DISK",
+                c.call("pool.flatten_topology", i["topology"]),
+            ):
+                if (
+                    j["disk"] is not None
+                    and not j["disk"].startswith(ignore[0])
+                    and not ignore[1].match(j["disk"])
+                ):
+                    disks[j["disk"]] = {"zpool": i["name"], "guid": i["guid"]}
     except Exception:
-        logger.error('Unhandled exception', exc_info=True)
+        logger.error("Unhandled exception", exc_info=True)
 
     return disks
 
@@ -61,53 +69,59 @@ def load_disks_middleware_use_zpools(c, ignore):
 def load_disks_pyudev(ignore):
     disks = {}
     try:
-        for dev in Context().list_devices(subsystem='block', DEVTYPE='disk'):
+        for dev in Context().list_devices(subsystem="block", DEVTYPE="disk"):
             if dev.sys_name.startswith(ignore[0]) or ignore[1].match(dev.sys_name):
                 continue
 
             disks[dev.sys_name] = get_disk_serial(dev)
     except Exception:
-        logger.error('Unhandled exception', exc_info=True)
+        logger.error("Unhandled exception", exc_info=True)
 
     return disks
 
 
 def load_disks_last_resort(ignore):
     cmd = [
-        '/usr/bin/lsblk', '-J', '-ndo', 'NAME,SERIAL',
-        '-I', '8,65,66,67,68,69,70,71,128,129,130,131,132,133,134,135,254,259'
+        "/usr/bin/lsblk",
+        "-J",
+        "-ndo",
+        "NAME,SERIAL",
+        "-I",
+        "8,65,66,67,68,69,70,71,128,129,130,131,132,133,134,135,254,259",
     ]
     disks = {}
     try:
         disks = {
-            i['name']: i['serial'] for i in json.loads(
+            i["name"]: i["serial"]
+            for i in json.loads(
                 subprocess.run(cmd, stdout=subprocess.PIPE).stdout.decode()
-            )['blockdevices'] if not i['name'].startswith(ignore[0]) or ignore[1].match(i['name'])
+            )["blockdevices"]
+            if not i["name"].startswith(ignore[0]) or ignore[1].match(i["name"])
         }
     except Exception:
-        logger.error('Unhandled exception', exc_info=True)
+        logger.error("Unhandled exception", exc_info=True)
 
     return disks
 
 
 def disks_to_be_ignored(ed=None):
-    prefixes = {'sr', 'md', 'dm-', 'loop', 'zd', 'pmem'}
+    prefixes = {"sr", "md", "dm-", "loop", "zd", "pmem"}
     if ed is not None:
         exclude = {}
         try:
-            if type(ed) == list:
+            if isinstance(ed, list):
                 # it's a list by default if fenced is called without exclude disk args
                 exclude = {i for i in ed}
-            elif type(ed) == str:
+            elif isinstance(ed, str):
                 # it's a comma separated list if fenced is called with exclude disk args
-                exclude = {i for i in ed.split(',') if i}
+                exclude = {i for i in ed.split(",") if i}
         except Exception:
-            logger.warning('Failed to format exclude disks params', exc_info=True)
+            logger.warning("Failed to format exclude disks params", exc_info=True)
         else:
             if exclude:
                 prefixes.update(exclude)
 
-    return (tuple(prefixes), re.compile(r'nvme[0-9]+c'))
+    return (tuple(prefixes), re.compile(r"nvme[0-9]+c"))
 
 
 def load_disks_impl(exclude_disks=None, use_zpools=False):
@@ -129,7 +143,7 @@ def load_disks_impl(exclude_disks=None, use_zpools=False):
                 # prevents zpool corruption
                 disks = load_disks_middleware_no_zpools(c, disks_to_ignore)
     except Exception:
-        logger.error('Unhandled exception enumerating middleware client', exc_info=True)
+        logger.error("Unhandled exception enumerating middleware client", exc_info=True)
 
     if not disks:
         # yikes....let's try again
