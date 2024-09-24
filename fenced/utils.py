@@ -3,7 +3,7 @@ import logging
 import re
 import subprocess
 
-from truenas_api_client import Client
+from middlewared.client import Client
 
 logger = logging.getLogger(__name__)
 
