@@ -87,6 +87,9 @@ def set_resource_limits():
     resource.setrlimit(resource.RLIMIT_NOFILE, limits)
 
 def parse_ed(value) -> tuple[str] | tuple:
+    """This method is used to parse the disks to be excluded
+    from fenced. This is given to us by the caller exclusively.
+    """
     parsed = list()
     try:
         for i in value.split():
