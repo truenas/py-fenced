@@ -54,13 +54,12 @@ def load_disks_lsblk(ignore):
     ]
     disks = {}
     try:
-        disks = {
-            i["name"]: i["serial"]
-            for i in json.loads(
-                subprocess.run(cmd, stdout=subprocess.PIPE).stdout.decode()
-            )["blockdevices"]
-            if not i["name"].startswith(ignore[0]) or ignore[1].match(i["name"])
-        }
+        stdout = subprocess.run(cmd, stdout=subprocess.PIPE).stdout.decode()
+        for i in json.loads(stdout)["blockdevices"]:
+            if i["name"].startswith(ignore[0]) or ignore[1].match(i["name"]):
+                continue
+            else:
+                disks[i["name"]] = i["serial"]
     except Exception:
         logger.error("Unhandled exception", exc_info=True)
 
