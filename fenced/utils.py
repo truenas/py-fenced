@@ -1,35 +1,23 @@
-from dataclasses import dataclass
 from logging import getLogger
 from os import DirEntry, scandir
-from re import compile as re_compile, Pattern
+from re import compile as re_compile
 
 logger = getLogger(__name__)
 
-
-@dataclass(slots=True, frozen=True, kw_only=True)
-class IgnoreObject:
-    prefixes: tuple[str] = ("sr", "md", "dm-", "loop", "zd", "pmem")
-    """A tuple of prefixes for known block devices that we should ignore"""
-    pattern: Pattern = re_compile(r"nvme[0-9]+c")
-    """An nvme controller device"""
-    user_excluded_disks: tuple[str] | tuple = tuple()
-    """The caller can provide disk(s) to be excluded
-        from fenced. (i.e. boot drives in the head-unit)"""
+SD_PATTERN = re_compile(r"^sd[a-z]+$")
+NVME_PATTERN = re_compile(r"^nvme\d+n\d+$")
 
 
-def should_not_ignore(entry: DirEntry, ignore: IgnoreObject) -> bool:
+def should_not_ignore(entry: DirEntry, ed: tuple[str] | tuple) -> bool:
     """Returns true if the device should NOT be ignored, false otherwise"""
-    return all(
-        (
-            entry.is_symlink(),
-            not entry.name.startswith(ignore.prefixes),
-            not ignore.pattern.match(entry.name),
-            entry.name not in ignore.user_excluded_disks,
-        )
-    )
+    if not entry.is_symlink() or entry.name in ed:
+        return False
+    elif SD_PATTERN.match(entry.name) or NVME_PATTERN.match(entry.name):
+        return True
+    return False
 
 
-def load_disks_from_sys_block(ignore: IgnoreObject) -> dict[str, str]:
+def load_disks_from_sys_block(ed: tuple[str] | tuple) -> dict[str, str]:
     """By the time fenced is called, the OS is booted into multi-user
     mode and has been for a bit. This means we should use sysfs to
     enumerate the disks since using things like libudev, are fickle
@@ -42,7 +30,7 @@ def load_disks_from_sys_block(ignore: IgnoreObject) -> dict[str, str]:
     disks = {}
     try:
         with scandir("/sys/block") as sdir:
-            for disk in filter(lambda x: should_not_ignore(x, ignore), sdir):
+            for disk in filter(lambda x: should_not_ignore(x, ed), sdir):
                 disks[disk.name] = disk.name
     except Exception:
         logger.error("Unhandled exception enumerating disks", exc_info=True)
@@ -58,4 +46,4 @@ def load_disks_impl(ed: tuple[str] | tuple, use_zpools: bool = False) -> dict[st
         `use_zpools`: boolean is a NO_OP (for now) and is a placeholder
             for generating a group of disks ONLY associated to a zpool.
     """
-    return load_disks_from_sys_block(IgnoreObject(user_excluded_disks=ed))
+    return load_disks_from_sys_block(ed)
