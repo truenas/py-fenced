@@ -86,6 +86,21 @@ def set_resource_limits():
     limits = (4096, 4096)  # soft and hard limits respectively
     resource.setrlimit(resource.RLIMIT_NOFILE, limits)
 
+def parse_ed(value) -> tuple[str] | tuple:
+    """This method is used to parse the disks to be excluded
+    from fenced. This is given to us by the caller exclusively.
+    """
+    parsed = list()
+    try:
+        for i in value.split():
+            for j in i.split(','):
+                if (j := j.strip()):
+                    parsed.append(j)
+    except Exception:
+        logger.error('Unexpected failure parsing exclude disks', exc_info=True)
+
+    return tuple(parsed)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -112,7 +127,8 @@ def main():
     )
     parser.add_argument(
         '--exclude-disks', '-ed',
-        default=[],
+        default='',
+        type=parse_ed,
         help='List of disks to be excluded from SCSI reservations.'
              ' (THIS CAN CAUSE PROBLEMS IF YOU DONT KNOW WHAT YOURE DOING)',
     )
