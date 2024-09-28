@@ -17,16 +17,14 @@ def should_not_ignore(entry: DirEntry, ed: tuple[str] | tuple) -> bool:
     return False
 
 
-def load_disks_from_sys_block(ed: tuple[str] | tuple) -> dict[str, str]:
-    """By the time fenced is called, the OS is booted into multi-user
-    mode and has been for a bit. This means we should use sysfs to
-    enumerate the disks since using things like libudev, are fickle
-    and can have missing devices based on operations done in userspace.
-    (i.e. if someone causes a "rescan"). Sysfs does not suffer from
-    such scenarios. (Obviously, sysfs can be "updated" if the drive
-    catastrophically fails OR someone physically pulls it or someone
-    issues an hba reset, etc but there isn't a way to prevent such
-    situations in the first place)"""
+def load_disks_from_dev(ed: tuple[str] | tuple) -> dict[str, str]:
+    """Iterating over /dev is the safest route for getting a list of
+    disks. One, non-obvious, reason for using /dev/ is that our HA
+    systems will mount disks between the nodes across the heartbeat
+    connection. These are used for iSCSI ALUA configurations. However,
+    they are hidden and so don't surface in the /dev/ directory. If we
+    were to use any other directory (/sys/block, /proc, etc) we run
+    risk of enumerating those devices and breaking fenced."""
     disks = {}
     try:
         with scandir("/dev") as sdir:
@@ -46,4 +44,4 @@ def load_disks_impl(ed: tuple[str] | tuple, use_zpools: bool = False) -> dict[st
         `use_zpools`: boolean is a NO_OP (for now) and is a placeholder
             for generating a group of disks ONLY associated to a zpool.
     """
-    return load_disks_from_sys_block(ed)
+    return load_disks_from_dev(ed)
