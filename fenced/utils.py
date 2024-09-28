@@ -1,4 +1,3 @@
-import os.path
 from logging import getLogger
 from os import DirEntry, scandir
 from re import compile as re_compile
@@ -11,7 +10,7 @@ NVME_PATTERN = re_compile(r"^nvme\d+n\d+$")
 
 def should_not_ignore(entry: DirEntry, ed: tuple[str] | tuple) -> bool:
     """Returns true if the device should NOT be ignored, false otherwise"""
-    if not entry.is_symlink() or entry.name in ed:
+    if entry.name in ed:
         return False
     elif SD_PATTERN.match(entry.name) or NVME_PATTERN.match(entry.name):
         return True
@@ -30,11 +29,9 @@ def load_disks_from_sys_block(ed: tuple[str] | tuple) -> dict[str, str]:
     situations in the first place)"""
     disks = {}
     try:
-        with scandir("/sys/block") as sdir:
+        with scandir("/dev") as sdir:
             for disk in filter(lambda x: should_not_ignore(x, ed), sdir):
-                # Only use the disk if it has a surfaced dev
-                if os.path.exists(os.path.join(disk.path, 'dev')):
-                    disks[disk.name] = disk.name
+                disks[disk.name] = disk.name
     except Exception:
         logger.error("Unhandled exception enumerating disks", exc_info=True)
 
