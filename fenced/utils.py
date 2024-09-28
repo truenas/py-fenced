@@ -1,3 +1,4 @@
+import os.path
 from logging import getLogger
 from os import DirEntry, scandir
 from re import compile as re_compile
@@ -31,7 +32,9 @@ def load_disks_from_sys_block(ed: tuple[str] | tuple) -> dict[str, str]:
     try:
         with scandir("/sys/block") as sdir:
             for disk in filter(lambda x: should_not_ignore(x, ed), sdir):
-                disks[disk.name] = disk.name
+                # Only use the disk if it has a surfaced dev
+                if os.path.exists(os.path.join(disk.path, 'dev')):
+                    disks[disk.name] = disk.name
     except Exception:
         logger.error("Unhandled exception enumerating disks", exc_info=True)
 
