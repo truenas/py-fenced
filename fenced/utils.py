@@ -3,9 +3,32 @@ import logging
 import re
 import subprocess
 
+from pyudev import Context
+
 from truenas_api_client import Client
 
 logger = logging.getLogger(__name__)
+
+
+def safe_retrieval(prop, keys, default, asint=False):
+    for key in keys:
+        if (value := prop.get(key)) is not None:
+            if isinstance(value, bytes):
+                value = value.strip().decode()
+            else:
+                value = value.strip()
+
+            return value if not asint else int(value)
+
+    return default
+
+
+def get_disk_serial(dev):
+    return safe_retrieval(
+        dev.properties,
+        ("ID_SCSI_SERIAL", "ID_SERIAL_SHORT", "ID_SERIAL"),
+        "",
+    )
 
 
 def load_disks_middleware_no_zpools(c, ignore):
@@ -43,7 +66,21 @@ def load_disks_middleware_use_zpools(c, ignore):
     return disks
 
 
-def load_disks_lsblk(ignore):
+def load_disks_pyudev(ignore):
+    disks = {}
+    try:
+        for dev in Context().list_devices(subsystem="block", DEVTYPE="disk"):
+            if dev.sys_name.startswith(ignore[0]) or ignore[1].match(dev.sys_name):
+                continue
+
+            disks[dev.sys_name] = get_disk_serial(dev)
+    except Exception:
+        logger.error("Unhandled exception", exc_info=True)
+
+    return disks
+
+
+def load_disks_last_resort(ignore):
     cmd = [
         "/usr/bin/lsblk",
         "-J",
@@ -54,12 +91,13 @@ def load_disks_lsblk(ignore):
     ]
     disks = {}
     try:
-        stdout = subprocess.run(cmd, stdout=subprocess.PIPE).stdout.decode()
-        for i in json.loads(stdout)["blockdevices"]:
-            if i["name"].startswith(ignore[0]) or ignore[1].match(i["name"]):
-                continue
-            else:
-                disks[i["name"]] = i["serial"]
+        disks = {
+            i["name"]: i["serial"]
+            for i in json.loads(
+                subprocess.run(cmd, stdout=subprocess.PIPE).stdout.decode()
+            )["blockdevices"]
+            if not i["name"].startswith(ignore[0]) or ignore[1].match(i["name"])
+        }
     except Exception:
         logger.error("Unhandled exception", exc_info=True)
 
@@ -93,77 +131,26 @@ def load_disks_impl(exclude_disks=None, use_zpools=False):
     can to prevent unexpected failures and always return disks.
     """
     disks_to_ignore = disks_to_be_ignored(ed=exclude_disks)
-    first_attempt_disks = {}
+    disks = {}
     try:
         with Client() as c:
             if use_zpools:
-                first_attempt_disks = load_disks_middleware_use_zpools(
-                    c, disks_to_ignore
-                )
+                disks = load_disks_middleware_use_zpools(c, disks_to_ignore)
 
-            if not first_attempt_disks:
+            if not disks:
                 # load_disks_middleware_use_zpools can return nothing for reasons that aren't
                 # fully understood...it's imperative that we reserve disks since it, ultimately,
                 # prevents zpool corruption
-                first_attempt_disks = load_disks_middleware_no_zpools(
-                    c, disks_to_ignore
-                )
+                disks = load_disks_middleware_no_zpools(c, disks_to_ignore)
     except Exception:
         logger.error("Unhandled exception enumerating middleware client", exc_info=True)
 
-    # we've discovered that the ES24F, when fully populated with SAS SSD
-    # SEAGATE XS7680SE70084 0002, has a race condition where-by these disks
-    # haven't been cached in udevd's database during a failover event.
-    # This is particularly painful for the following scenario:
-    #   Have head-unit populated with disks, have ES24F fully populated. Failover
-    #   is triggered and fenced enumerates ONLY the disks in the head-unit. Since
-    #   we enumerated _SOME_ disks, we assume everything is fine and continue on
-    #   by design. However, when we go to import the zpool on the other controller
-    #   the import fails because the drives in the shelf were not enumerated thereby
-    #   preventing persistent reservations from being updated which ultimately ends
-    #   up with the zpool(s) failing to be imported. This is a production outage
-    #   scenario that requires administrative intervention which is painful.
-    #
-    # To combat this scenario, we will enumerate disks using middleware and then
-    # enumerate disks using a different method. We will take the larger of the
-    # enumerated disk objects. This was tested in the field on a customer system.
-    second_attempt_disks = load_disks_lsblk(disks_to_ignore)
-    if not first_attempt_disks:
-        if not second_attempt_disks:
-            # yikes....this is bad first and second attempt failed...
-            # just try 1 last time to return something
-            logger.warning(
-                "Two attempts enumerating disks failed. Trying one last time."
-            )
-            return load_disks_lsblk(disks_to_be_ignored)
-        else:
-            logger.warning(
-                "First attempt enumerating disks failed but second attempt succeeded."
-            )
-            return second_attempt_disks
+    if not disks:
+        # yikes....let's try again
+        disks = load_disks_pyudev(disks_to_ignore)
 
-    len_first, len_second = len(first_attempt_disks), len(second_attempt_disks)
-    if len_first > len_second:
-        logger.warning(
-            "First attempt enumerated more disks (%r) than second attempt (%r).",
-            len_first,
-            len_second,
-        )
-        return first_attempt_disks
-    elif len_second > len_first:
-        if use_zpools:
-            # use_zpools will place reservations on disks associated to zpool(s)
-            # which means the 2nd attempt could produce more drives since the
-            # zpool(s) might not being using all disks on the system. This is
-            # fine.
-            return first_attempt_disks
-        else:
-            logger.warning(
-                "Second attempt enumerated more disks (%r) than first attempt (%r)",
-                len_second,
-                len_first,
-            )
-            return second_attempt_disks
+    if not disks:
+        # last resort...something is really broken
+        disks = load_disks_last_resort(disks_to_ignore)
 
-    # first and second attempt are equal
-    return first_attempt_disks
+    return disks
