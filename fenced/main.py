@@ -142,8 +142,9 @@ def main():
     setup_logging(args.foreground)
 
     if is_running():
-        logger.error('fenced already running.')
-        sys.exit(ExitCode.ALREADY_RUNNING.value)
+        rc, err = ExitCode.ALREADY_RUNNING.value
+        logger.error(err)
+        sys.exit(rc)
 
     set_resource_limits()
     fence = Fence(args.interval, args.exclude_disks, args.use_zpools)
@@ -169,16 +170,19 @@ def main():
         fence.loop(newkey)
     except PanicExit as e:
         if args.no_panic:
-            logger.warning('NO PANIC ERROR:', exc_info=True)
-            sys.exit(ExitCode.UNKNOWN.value)
+            rc, err = ExitCode.NO_PANIC.value
+            logger.warning(err, exc_info=True)
+            sys.exit(rc)
         else:
             panic(e)
     except ExcludeDisksError:
-        logger.critical('FATAL:', exc_info=True)
-        sys.exit(ExitCode.EXCLUDE_DISKS_ERROR.value)
+        rc, err = ExitCode.EXCLUDE_DISKS_ERROR.value
+        logger.critical(err, exc_info=True)
+        sys.exit(rc)
     except Exception:
-        logger.critical('Unhandled exception', exc_info=True)
-        sys.exit(ExitCode.UNKNOWN.value)
+        rc, err = ExitCode.UNKNOWN.value
+        logger.critical(err, exc_info=True)
+        sys.exit(rc)
 
 
 if __name__ == '__main__':

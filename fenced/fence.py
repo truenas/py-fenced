@@ -12,13 +12,14 @@ logger = logging.getLogger(__name__)
 ID_FILE = '/etc/machine-id'
 
 
-class ExitCode(enum.IntEnum):
-    REGISTER_ERROR = 1
-    REMOTE_RUNNING = 2
-    RESERVE_ERROR = 3
-    EXCLUDE_DISKS_ERROR = 4
-    UNKNOWN = 5
-    ALREADY_RUNNING = 6
+class ExitCode(enum.Enum):
+    REGISTER_ERROR = (1, 'No disks available to register keys on')
+    REMOTE_RUNNING = (2, 'Fenced is running on the remote controller')
+    RESERVE_ERROR = (3, 'Too many disks failed to be reserved')
+    EXCLUDE_DISKS_ERROR = (4, 'Excluding all disks is not allowed')
+    UNKNOWN = (5, 'Unhandled exception')
+    ALREADY_RUNNING = (6, 'fenced is already running')
+    NO_PANIC = (7, 'fenced called with no panic flag')
 
 
 class Fence(object):
@@ -37,7 +38,7 @@ class Fence(object):
                 return int(f.read(8), 16)
         except Exception:
             logger.error('failed to generate unique id', exc_info=True)
-            sys.exit(ExitCode.UNKNOWN.value)
+            sys.exit(ExitCode.UNKNOWN.value[0])
 
     def load_disks(self):
         logger.info('Clearing disks (if any)')
@@ -48,7 +49,7 @@ class Fence(object):
             disks = load_disks_impl(self._exclude_disks, self._use_zpools)
         except Exception:
             logger.error('unhandled exception enumerating disk info', exc_info=True)
-            sys.exit(ExitCode.UNKNOWN.value)
+            sys.exit(ExitCode.UNKNOWN.value[0])
         else:
             if disks and not set(disks) - set(self._exclude_disks):
                 raise ExcludeDisksError('Excluding all disks is not allowed')
@@ -95,7 +96,7 @@ class Fence(object):
         remote_keys = self.load_disks()
         if not self._disks:
             logger.error('No disks available, exiting.')
-            sys.exit(ExitCode.REGISTER_ERROR.value)
+            sys.exit(ExitCode.REGISTER_ERROR.value[0])
 
         if not force:
             wait = 2 * self._interval + 1
@@ -104,7 +105,7 @@ class Fence(object):
             new_remote_keys = self._disks.get_keys()[1]
             if not new_remote_keys.issubset(remote_keys):
                 logger.error('Reservation keys have changed, exiting.')
-                sys.exit(ExitCode.REMOTE_RUNNING.value)
+                sys.exit(ExitCode.REMOTE_RUNNING.value[0])
             else:
                 logger.info('Reservation keys unchanged.')
 
@@ -114,7 +115,7 @@ class Fence(object):
             rate = int((len(failed_disks) / len(self._disks)) * 100)
             if rate > 10:
                 logger.error('Failed to reset reservations on %d%% of the disks, exiting.', rate)
-                sys.exit(ExitCode.RESERVE_ERROR.value)
+                sys.exit(ExitCode.RESERVE_ERROR.value[0])
             for disk in failed_disks:
                 self._disks.remove(disk)
 
