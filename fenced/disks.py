@@ -1,7 +1,7 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor, wait as fut_wait
 
-from middlewared.utils.scsi_generic import inquiry
+from fenced.scsi_generic import inquiry
 
 from libsgio import SCSIErrorException, SCSI_OPCODES, SCSIDevice as SCSI
 from nvme import NvmeDevice as NVME
