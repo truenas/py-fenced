@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='fenced',
-    version='0.0.3',
+    version='0.0.4',
     description='TrueNAS SCALE Fencing Daemon',
     packages=find_packages(),
     classifiers=[
