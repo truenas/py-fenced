@@ -33,7 +33,7 @@ def setup_logging(foreground):
                 'level': 'INFO',
                 'filename': LOG_FILE,
                 'maxBytes': 1000000,  # 1MB size
-                'backupCount': '3',
+                'backupCount': 3,
             },
             'console': {
                 'class': 'logging.StreamHandler',
