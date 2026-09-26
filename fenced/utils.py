@@ -17,7 +17,7 @@ def should_not_ignore(entry: DirEntry, ed: tuple[str] | tuple) -> bool:
     return False
 
 
-def load_disks_from_dev(ed: tuple[str] | tuple) -> dict[str, str]:
+def load_disks_from_dev(ed: tuple[str] | tuple) -> list[str]:
     """Iterating over /dev is the safest route for getting a list of
     disks. One, non-obvious, reason for using /dev/ is that our HA
     systems will mount disks between the nodes across the heartbeat
@@ -25,23 +25,13 @@ def load_disks_from_dev(ed: tuple[str] | tuple) -> dict[str, str]:
     they are hidden and so don't surface in the /dev/ directory. If we
     were to use any other directory (/sys/block, /proc, etc) we run
     risk of enumerating those devices and breaking fenced."""
-    disks = {}
+    disks = []
     try:
         with scandir("/dev") as sdir:
             for disk in filter(lambda x: should_not_ignore(x, ed), sdir):
-                disks[disk.name] = disk.name
+                disks.append(disk.name)
     except Exception:
         logger.error("Unhandled exception enumerating disks", exc_info=True)
 
     return disks
 
-
-def load_disks_impl(ed: tuple[str] | tuple, use_zpools: bool = False) -> dict[str, str]:
-    """
-    Return disk(s) to have persistent reservations placed upon.
-        `ed`: user supplied disk(s) that will be excluded from having
-            persistent reservations placed upon them.
-        `use_zpools`: boolean is a NO_OP (for now) and is a placeholder
-            for generating a group of disks ONLY associated to a zpool.
-    """
-    return load_disks_from_dev(ed)

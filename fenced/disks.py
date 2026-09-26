@@ -1,5 +1,5 @@
 import logging
-from concurrent.futures import ThreadPoolExecutor, wait as fut_wait
+from concurrent.futures import ThreadPoolExecutor, wait
 
 from fenced.scsi_generic import inquiry
 
@@ -10,158 +10,74 @@ SET_DISKS_CAP = 30
 logger = logging.getLogger(__name__)
 
 
-class Disks(dict):
+def run_batch(fn, disks, *args, timeout=30):
+    """
+    Call `fn(disk, *args)` for each disk concurrently.
+    Returns ({disk: result}, {disks that failed or timed out}).
 
-    def __init__(self, fence):
-        self.fence = fence
-        self._set_disks = set()
+    The executor is not used as a context manager because its exit waits
+    for every thread, so one hung disk would block past `timeout`.
+    """
+    executor = ThreadPoolExecutor(max_workers=SET_DISKS_CAP)
+    futs = {executor.submit(fn, disk, *args): disk for disk in disks}
+    done, not_done = wait(futs, timeout=timeout)
+    executor.shutdown(wait=False, cancel_futures=True)
 
-    def add(self, disk):
-        assert isinstance(disk, Disk)
-        self[disk.name] = disk
-
-    def remove(self, disk):
-        self.pop(disk.name)
-
-    def _get_set_disks(self):
-        """
-        There is no reason set keys on every disk, especially for systems with
-        hundreds of them.
-        For better performance let's cap the number of disks we set the new key
-        per round to `SET_DISKS_CAP`.
-        """
-        if len(self) <= SET_DISKS_CAP:
-            return self.values()
-
-        newset = set(self.values()) - self._set_disks
-        if newset:
-            if len(newset) > SET_DISKS_CAP:
-                newset = set(list(newset)[:SET_DISKS_CAP])
-                self._set_disks.update(newset)
-            else:
-                newset.update(set(
-                    list(
-                        self.values()
-                    )[:SET_DISKS_CAP - len(newset)]
-                ))
-                self._set_disks = newset
-            return newset
-        else:
-            self._set_disks = set(list(self.values())[:SET_DISKS_CAP])
-            return self._set_disks
-
-    def _run_batch(self, method, args=None, disks=None, done_callback=None):
-        """
-        Helper method to run a batch of a Disk method
-        """
-        args = args or []
-        disks = disks or self.values()
-        executor = ThreadPoolExecutor(max_workers=SET_DISKS_CAP)
+    results, failed = {}, {futs[f] for f in not_done}
+    if failed:
+        logger.warning("%s timed out for %d disk(s)", fn.__name__, len(failed))
+    for f in done:
         try:
-            fs = {
-                executor.submit(getattr(disk, method), *args): disk
-                for disk in disks
-            }
-            done_notdone = fut_wait(fs.keys(), timeout=30)
-        finally:
-            executor.shutdown(wait=False)
-        failed = {fs[i] for i in done_notdone.not_done}
-        if failed:
-            logger.warning('method %r with args %r timed out for %d disk(s)', method, args, len(failed))
-        for i in done_notdone.done:
-            if done_callback:
-                done_callback(i, fs, failed)
-            else:
-                try:
-                    i.result()
-                except Exception:
-                    disk = fs[i]
-                    logger.warning('method %r with args %r for disk %r failed.', method, args, disk, exc_info=True)
-                    failed.add(disk)
-        return failed
-
-    def get_keys(self):
-        keys = set()
-        remote_keys = set()
-
-        def callback(i, fs, failed):
-            try:
-                host_key, remote_key = i.result()
-                remote_keys.update(remote_key)
-                if host_key is None:
-                    failed.add(fs[i])
-                    return
-                keys.add(host_key)
-            except Exception:
-                failed.add(fs[i])
-
-        failed = self._run_batch('get_keys', done_callback=callback)
-        return keys, remote_keys, failed
-
-    def register_keys(self, newkey):
-        return self._run_batch('register_key', [newkey], disks=self._get_set_disks())
-
-    def reset_keys(self, newkey):
-        return self._run_batch('reset_keys', [newkey])
+            results[futs[f]] = f.result()
+        except Exception:
+            logger.warning("%s failed for %r", fn.__name__, futs[f], exc_info=True)
+            failed.add(futs[f])
+    return results, failed
 
 
-class Disk(object):
-
-    def __init__(self, fence, name, log_info=None):
-        self.fence = fence
+class Disk:
+    def __init__(self, name, hostid):
         self.name = name
-        self.log_info = log_info
+        self.hostid = hostid
         self.curkey = None
-        self.disk = self.__parse_disk(f'/dev/{name}')
-
-    def __repr__(self):
-        return f'<Disk: {self.name}>'
-
-    def __str__(self):
-        return self.name
-
-    def __parse_disk(self, disk):
-        if disk.find('nvme') != -1:
+        path = f"/dev/{name}"
+        if name.startswith("nvme"):
             # enumerated as a proper nvme device
-            return NVME(disk)
-        elif inquiry(disk)['vendor'].lower() == 'nvme':
+            self.dev = NVME(path)
+        elif inquiry(path)["vendor"].lower() == "nvme":
             # tri-mode HBA on h-series platform enumerates
             # nvme devices as SCSI devices. Must check the
             # T10 vendor string from the device itself to
             # see if it's a NVMe device.
-            return NVME(disk)
+            self.dev = NVME(path)
         else:
-            return SCSI(disk)
+            self.dev = SCSI(path)
 
-    def get_keys(self):
-        host_key = None
-        remote_keys = set()
-        for key in self.disk.read_keys()['keys']:
-            # First 4 bytes are the host id
-            if key >> 32 == self.fence.hostid:
-                host_key = key
-            else:
-                remote_keys.add(key)
-        return (host_key, remote_keys)
+    def __repr__(self):
+        return f"<Disk: {self.name}>"
 
-    def get_reservation(self):
-        return self.disk.read_reservation()
+    def remote_keys(self):
+        # First 4 bytes are the host id
+        return {k for k in self.dev.read_keys()["keys"] if k >> 32 != self.hostid}
+
+    def reservation(self):
+        return self.dev.read_reservation()["reservation"]
 
     def register_key(self, newkey):
-        newkey = self.fence.hostid << 32 | (newkey & 0xffffffff)
-        self.disk.update_key(self.curkey, newkey)
+        newkey = self.hostid << 32 | (newkey & 0xFFFFFFFF)
+        self.dev.update_key(self.curkey, newkey)
         self.curkey = newkey
 
     def reset_keys(self, newkey):
-        reservation = self.get_reservation()
-        newkey = self.fence.hostid << 32 | (newkey & 0xffffffff)
-        if reservation['reservation'] is not None:
-            if reservation['reservation'] >> 32 != self.fence.hostid:
+        resv = self.reservation()
+        newkey = self.hostid << 32 | (newkey & 0xFFFFFFFF)
+        if resv is not None:
+            if resv >> 32 != self.hostid:
                 # reservation isn't ours so register new key
                 # and preempt the other reservation
-                self.disk.register_ignore_key(newkey)
+                self.dev.register_ignore_key(newkey)
                 try:
-                    self.disk.preempt_key(reservation['reservation'], newkey)
+                    self.dev.preempt_key(resv, newkey)
                 except SCSIErrorException as e:
                     if e.args and e.args[0] == SCSI_OPCODES.RESERVATION_CONFLICT:
                         # the logic by which we check if the reservation is "owned"
@@ -172,16 +88,16 @@ class Disk(object):
                         # for reservation conflict and try to "update" the key since
                         # getting a reservation conflict when trying to preempt the
                         # current key typically means this host is the current owner
-                        self.disk.reserve_key(newkey)
-            elif reservation['reservation'] >> 32 == self.fence.hostid:
+                        self.dev.reserve_key(newkey)
+            else:
                 # reservation is owned by us so simply update
                 # the existing reservation with the new key
-                self.disk.update_key(reservation['reservation'], newkey)
-        elif not self.disk.read_keys()['keys']:
+                self.dev.update_key(resv, newkey)
+        elif not self.dev.read_keys()["keys"]:
             # check to see if there are even keys on disk
-            self.disk.register_new_key(newkey)
-            self.disk.reserve_key(newkey)
+            self.dev.register_new_key(newkey)
+            self.dev.reserve_key(newkey)
         else:
-            self.disk.register_ignore_key(newkey)
-            self.disk.reserve_key(newkey)
+            self.dev.register_ignore_key(newkey)
+            self.dev.reserve_key(newkey)
         self.curkey = newkey

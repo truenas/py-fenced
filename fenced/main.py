@@ -9,7 +9,7 @@ import time
 import contextlib
 import resource
 
-from fenced.exceptions import PanicExit, ExcludeDisksError
+from fenced.exceptions import PanicExit
 from fenced.fence import Fence, ExitCode
 from fenced.logging import setup_logging
 from fenced.constants import PID_FILE, FENCED_ALERT_FILE
@@ -30,9 +30,9 @@ def is_running():
     running = False
     with contextlib.suppress(Exception):
         with Client() as c:
-            data = c.call('failover.fenced.run_info')
-            if data['running'] and data['pid']:
-                if data['pid'] != os.getpid():
+            data = c.call("failover.fenced.run_info")
+            if data["running"] and data["pid"]:
+                if data["pid"] != os.getpid():
                     running = True
 
     return running
@@ -43,7 +43,7 @@ def update_pid_file():
     We call this method after we have fork()'ed
     """
     with contextlib.suppress(Exception):
-        with open(PID_FILE, 'w+') as f:
+        with open(PID_FILE, "w+") as f:
             f.write(str(os.getpid()))
 
 
@@ -56,23 +56,23 @@ def panic(reason):
     Ticket #39114
     """
     try:
-        with open(FENCED_ALERT_FILE, 'w') as f:
-            f.write(f'{time.time()}')
+        with open(FENCED_ALERT_FILE, "w") as f:
+            f.write(f"{time.time()}")
             f.flush()
             os.fsync(f.fileno())  # Be extra sure
     except Exception:
-        logger.warning('Failed to write alert file', exc_info=True)
+        logger.warning("Failed to write alert file", exc_info=True)
 
-    logger.critical('FATAL: issuing an immediate panic because %s', reason)
+    logger.critical("FATAL: issuing an immediate panic because %s", reason)
 
     # enable the "magic" sysrq-triggers
     # https://www.kernel.org/doc/html/latest/admin-guide/sysrq.html
-    with open('/proc/sys/kernel/sysrq', 'w') as f:
-        f.write('1')
+    with open("/proc/sys/kernel/sysrq", "w") as f:
+        f.write("1")
 
     # now violently reboot
-    with open('/proc/sysrq-trigger', 'w') as f:
-        f.write('b')
+    with open("/proc/sysrq-trigger", "w") as f:
+        f.write("b")
 
 
 def set_resource_limits():
@@ -85,6 +85,7 @@ def set_resource_limits():
     limits = (4096, 4096)  # soft and hard limits respectively
     resource.setrlimit(resource.RLIMIT_NOFILE, limits)
 
+
 def parse_ed(value) -> tuple[str] | tuple:
     """This method is used to parse the disks to be excluded
     from fenced. This is given to us by the caller exclusively.
@@ -92,11 +93,11 @@ def parse_ed(value) -> tuple[str] | tuple:
     parsed = list()
     try:
         for i in value.split():
-            for j in i.split(','):
-                if (j := j.strip()):
+            for j in i.split(","):
+                if j := j.strip():
                     parsed.append(j)
     except Exception:
-        logger.error('Unexpected failure parsing exclude disks', exc_info=True)
+        logger.error("Unexpected failure parsing exclude disks", exc_info=True)
 
     return tuple(parsed)
 
@@ -104,37 +105,43 @@ def parse_ed(value) -> tuple[str] | tuple:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--force', '-f',
-        action='store_true',
-        help='Do not check existing disk reservations',
+        "--force",
+        "-f",
+        action="store_true",
+        help="Do not check existing disk reservations",
     )
     parser.add_argument(
-        '--foreground', '-F',
-        action='store_true',
-        help='Run in foreground mode',
+        "--foreground",
+        "-F",
+        action="store_true",
+        help="Run in foreground mode",
     )
     parser.add_argument(
-        '--no-panic', '-np',
-        action='store_true',
-        help='Do not panic in case of a fatal error',
+        "--no-panic",
+        "-np",
+        action="store_true",
+        help="Do not panic in case of a fatal error",
     )
     parser.add_argument(
-        '--interval', '-i',
+        "--interval",
+        "-i",
         default=5,
         type=int,
-        help='Time in seconds between each SCSI reservation set/check',
+        help="Time in seconds between each SCSI reservation set/check",
     )
     parser.add_argument(
-        '--exclude-disks', '-ed',
-        default='',
+        "--exclude-disks",
+        "-ed",
+        default="",
         type=parse_ed,
-        help='List of disks to be excluded from SCSI reservations.'
-             ' (THIS CAN CAUSE PROBLEMS IF YOU DONT KNOW WHAT YOURE DOING)',
+        help="List of disks to be excluded from SCSI reservations."
+        " (THIS CAN CAUSE PROBLEMS IF YOU DONT KNOW WHAT YOURE DOING)",
     )
     parser.add_argument(
-        '--use-zpools', '-uz',
-        action='store_true',
-        help='Reserve the disks in use by the zpools detected on this system',
+        "--use-zpools",
+        "-uz",
+        action="store_true",
+        help="Unused, accepted for compatibility",
     )
     args = parser.parse_args()
 
@@ -146,11 +153,11 @@ def main():
         sys.exit(rc)
 
     set_resource_limits()
-    fence = Fence(args.interval, args.exclude_disks, args.use_zpools)
+    fence = Fence(args.interval, args.exclude_disks)
     newkey = fence.init(args.force)
 
     if not args.foreground:
-        logger.info('Entering in daemon mode.')
+        logger.info("Entering in daemon mode.")
         if os.fork() != 0:
             sys.exit(0)
         os.setsid()
@@ -158,7 +165,7 @@ def main():
             sys.exit(0)
         os.closerange(0, 3)
     else:
-        logger.info('Running in foreground mode.')
+        logger.info("Running in foreground mode.")
 
     update_pid_file()
 
@@ -174,15 +181,11 @@ def main():
             sys.exit(rc)
         else:
             panic(e)
-    except ExcludeDisksError:
-        rc, err = ExitCode.EXCLUDE_DISKS_ERROR.value
-        logger.critical(err, exc_info=True)
-        sys.exit(rc)
     except Exception:
         rc, err = ExitCode.UNKNOWN.value
         logger.critical(err, exc_info=True)
         sys.exit(rc)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
