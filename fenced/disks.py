@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 
 from fenced.scsi_generic import inquiry
 
-from libsgio import SCSIErrorException, SCSI_OPCODES, SCSIDevice as SCSI
+from libsgio import SCSIErrorException, SCSIDevice as SCSI
 from nvme import NvmeDevice as NVME
 
 SET_DISKS_CAP = 30
@@ -78,17 +78,9 @@ class Disk:
                 self.dev.register_ignore_key(newkey)
                 try:
                     self.dev.preempt_key(resv, newkey)
-                except SCSIErrorException as e:
-                    if e.args and e.args[0] == SCSI_OPCODES.RESERVATION_CONFLICT:
-                        # the logic by which we check if the reservation is "owned"
-                        # by this host is custom logic that was written by us and is
-                        # flawed. The spec for handling pr keys defines a command
-                        # that can be used to determine if this host is the current
-                        # reservation holder. Since we don't have this, we check
-                        # for reservation conflict and try to "update" the key since
-                        # getting a reservation conflict when trying to preempt the
-                        # current key typically means this host is the current owner
-                        self.dev.reserve_key(newkey)
+                except SCSIErrorException:
+                    # ignored on purpose, fenced has always swallowed preempt errors
+                    pass
             else:
                 # reservation is owned by us so simply update
                 # the existing reservation with the new key
